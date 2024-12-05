@@ -5,6 +5,7 @@ library(ggplot2)
 library(gridExtra)
 library(knitr)
 library(dplyr)
+library(ggrepel)
 
 df <- read.csv("dvis.csv")
 cols <- c("female", "hhkids", "married", "employed", "addins", "privateins", "eductype")
@@ -169,10 +170,47 @@ df$age = df$age - mean(df$age)
 df$hhninc = df$hhninc - mean(df$hhninc)
 df$educyrs = df$educyrs - mean(df$educyrs)
 
+# lm <- glm(docvis ~ . + . * female, family = poisson, data = df)
+# plot(lm, 1)
+
 glm_1 <- glm(docvis ~ ., family = poisson, data = df)
 summary(glm_1)
 
-glm_2 <- glm(docvis ~ . + . * female, family = poisson, data = df)
+glm_2 <- glm(docvis ~ . * female, family = poisson, data = df)
 summary(glm_2)
 
 glm_3 <- step(glm_2, trace = T)
+summary(glm_3)
+anova(glm_3)
+
+
+# Diagnostics
+n <- length(glm_3$fitted.values)
+p <- length(coef(glm_3))
+thres_infl <-  8/(n - 2 * p)
+id_hi = (cooks.distance(glm_3) > thres_infl)
+id_hl = (influence(glm_3)$hat > p/n*2)
+
+ggplot(glm_3, aes(x = predict(glm_3), y = rstandard(glm_3))) +
+  geom_point(alpha = 0.4, position = position_jitter(width = 0.1, height = 0.1)) +
+  labs(x = "Linear Predictor", y = "")
+
+ggplot(glm_3, aes(sample = rstandard(glm_3))) +
+  stat_qq() +
+  stat_qq_line() + 
+  labs(x = "Theoretical quantiles", y = "Sample quantiles")
+
+ggplot(glm_3, aes(x = 1:n, y = influence(glm_3)$hat / (p/n))) +
+  geom_point() +
+  geom_hline(yintercept = 2, linetype = 2) + 
+  labs(x = "Observation number", y = "Leverage / (p/n)") +
+  geom_text_repel(data = df, aes(label = ifelse(id_hl, 1:n, "")), size=3)
+
+ggplot(glm_3, aes(x = 1:n, y = cooks.distance(glm_3))) +
+  geom_point() +
+  geom_hline(yintercept = thres, linetype = 2) + 
+  labs(x = "Observation number", y = "Cook's distance") +
+  geom_text_repel(data = df, aes(label = ifelse(id_hi, 1:n, "")), size=3)
+
+
+
