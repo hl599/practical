@@ -16,7 +16,7 @@ df$female <- factor(df$female, levels = c(0, 1), labels = c("Male", "Female"))
 df$married <- factor(df$married, levels = c(0, 1), labels = c("Not Married", "Married"))
 df$employed <- factor(df$employed, levels = c(0, 1), labels = c("No Paid Work", "In Paid Work"))
 df$addins <- factor(df$addins, levels = c(0, 1), labels = c("No AddIns", "Additional Insurance"))
-df$privateins <- factor(df$privateins, levels = c(0, 1), labels = c("No PrivateIns", "Private health insurance"))
+df$privateins <- factor(df$privateins, levels = c(0, 1), labels = c("No PrivateIns", "Private insurance"))
 df$hhkids <- factor(df$hhkids, levels = c(0, 1), labels = c("No Children", "Children in household"))
 df$eductype <- factor(df$eductype, ordered = T, levels = c(0, 1, 2, 3, 4, 5), labels = c("None", "Hauptschule", "Realschule", "Fachhochschule", "Abitur", "University"))
 
@@ -54,23 +54,23 @@ table(df$educyrs)
 
 # univariate
 plot_1 <- ggplot(df, aes(x = docvis)) +
-  geom_histogram(aes(y = ..density..), position = "dodge", binwidth = 1) +
-  labs(y = "Density", x = "Visits to a doctor")
+  geom_histogram(aes(y = ..density..), col = "black", binwidth = 1) +
+  labs(y = "Frequency", x = "Number of visits to a doctor in a month before interview")
 
 density_hhninc <- ggplot(df, aes(x = hhninc)) +
   geom_histogram(aes(y = ..density..), binwidth = 0.5) +
   geom_density(col = "red", size = 1) +
-  labs(y = "Density", x = "Net monthly household income (German Marks/100)")
+  labs(y = "Frequency", x = "Net monthly household income (k DM)")
 
 density_educyrs <- ggplot(df, aes(x = educyrs)) +
   geom_histogram(aes(y = ..density..)) +
   geom_density(col = "red", size = 0.5) +
-  labs(y = "Density", x = "Years of schooling")
+  labs(y = "Frequency", x = "Years of schooling")
 
 density_age <- ggplot(df, aes(x = age)) +
   geom_histogram(aes(y = ..density..), binwidth = 1) +
   geom_density(col = "red", size = 1) +
-  labs(y = "Density", x = "Age (Years)")
+  labs(y = "Frequency", x = "Age (years)")
 
 proportion_eductype <- ggplot(df, aes(x = eductype)) +
   geom_bar() +
@@ -82,7 +82,14 @@ density_eductype <- df %>%
 
 density_eductype <- ggplot(density_eductype, aes(x = eductype, y = proportion)) +
   geom_bar(stat = "identity") +
-  labs(y = "Density", x = "Highest degree of schooling")
+  labs(y = "Frequency", x = "Highest degree of schooling") +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,    
+      hjust = 1,    
+      vjust = 1      
+    )
+  )
 
 plot_2 <- grid.arrange(density_hhninc, density_age, density_educyrs, density_eductype , ncol = 2)
 
@@ -125,7 +132,7 @@ cor(as.numeric(df$eductype), df$educyrs, method = "kendall")
 cor(as.numeric(df$eductype), df$educyrs, method = "spearman")
 
 
-grid.arrange(
+plot_3 <- grid.arrange(
   arrangeGrob(
     decile_age, decile_hhninc, decile_educyrs,
     nrow = 3
@@ -183,55 +190,134 @@ layout <- rbind(c(1, 2, 3),
 plot_4 <- grid.arrange(boxplot_female, boxplot_hhkids, boxplot_married, boxplot_employed, boxplot_addins, boxplot_privateins, boxplot_eductype, layout_matrix = layout)
 
 # Modelling
-df$demeaned_age = df$age - mean(df$age)
-df$demeaned_hhninc = df$hhninc - mean(df$hhninc)
-df$demeaned_educyrs = df$educyrs - mean(df$educyrs)
+df$c_age = df$age - mean(df$age)
+df$c_hhninc = df$hhninc - mean(df$hhninc)
+df$c_educyrs = df$educyrs - mean(df$educyrs)
 
-glm_1 <- glm(docvis ~ ., family = poisson, data = df %>% select(-c("age", "hhninc", "educyrs")))
-summary(glm_1)
+full_model <- glm(docvis ~ . * female, family = poisson, data = df %>% select(-c("age", "hhninc", "educyrs")))
+summary(full_model)
 
-glm_2 <- glm(docvis ~ . * female, family = poisson, data = df %>% select(-c("age", "hhninc", "educyrs")))
-summary(glm_2)
-
-glm_3 <- step(glm_2, trace = T)
-summary(glm_3)
-
-anova(glm_3)
-rsq(glm_3, adj = FALSE, type = "kl")
+step(full_model, trace = F)
+glm_baseline <- glm(docvis ~ female * c_age + c_hhninc + c_educyrs + hhkids + addins, family = poisson, data = df %>% select(-c("age", "hhninc", "educyrs")))
+estimate_final_model <- round(summary(glm_baseline)$coefficient, 3)
+anova(glm_baseline)
+glm_reorder <- glm(docvis ~ c_hhninc + c_educyrs +  female * c_age + hhkids + addins, family = poisson, data = df %>% select(-c("age", "hhninc", "educyrs")))
+anova(glm_reorder)
 
 # Goodness of Fit
-hoslem.test(fitted(glm_3), df$docvis, g = 10)
+rsq(glm_baseline, adj = FALSE, type = "kl")
 
 # Diagnostics
-n <- length(glm_3$fitted.values)
-p <- length(coef(glm_3))
-top_10_leverage <- rank(-influence(glm_3)$hat) <= 10
-top_10_influence <- rank(-cooks.distance(glm_3)) <= 10
+n <- length(glm_baseline$fitted.values)
+p <- length(coef(glm_baseline))
+top_leverage <- rank(-influence(glm_baseline)$hat) <= 5
+top_influence <- rank(-cooks.distance(glm_baseline)) <= 5
 
-diag_qqplot <- ggplot(glm_3, aes(sample = rstandard(glm_3))) +
+diag_qqplot <- ggplot(glm_baseline, aes(sample = rstandard(glm_baseline))) +
   stat_qq() +
   stat_qq_line() + 
   labs(x = "Theoretical quantiles", y = "Sample quantiles")
 
-diag_res <- ggplot(glm_3, aes(x = predict(glm_3), y = rstandard(glm_3))) +
+diag_res <- ggplot(glm_baseline, aes(x = predict(glm_baseline, type = "link"), y = rstandard(glm_baseline))) +
   geom_point(alpha = 0.4, position = position_jitter(width = 0.1, height = 0.1)) +
-  labs(x = "Linear Predictor", y = "")
+  labs(x = "Linear Predictor", y = "Deviance Residuals")
 
-diag_influence <- ggplot(glm_3, aes(x = 1:n, y = influence(glm_3)$hat / (p/n))) +
+diag_influence <- ggplot(glm_baseline, aes(x = 1:n, y = influence(glm_baseline)$hat / (p/n))) +
   geom_point() +
-  geom_hline(yintercept = 2, linetype = 2) + 
+  geom_hline(yintercept = 2, linetype = 2, , col = "red", size = 0.75) + 
   labs(x = "Observation number", y = "Leverage / (p/n)") +
-  geom_text_repel(data = df, aes(label = ifelse(top_10_leverage, 1:n, "")), size=3)
+  geom_text_repel(data = df, aes(label = ifelse(top_leverage, 1:n, "")), size=3)
 
-diag_leverage <- ggplot(glm_3, aes(x = 1:n, y = cooks.distance(glm_3))) +
+diag_leverage <- ggplot(glm_baseline, aes(x = 1:n, y = cooks.distance(glm_baseline))) +
   geom_point() +
-  geom_hline(yintercept = 8/(n - 2 * p), linetype = 2) + 
+  geom_hline(yintercept = 8/(n - 2 * p), linetype = 2, col = "red", size = 0.75) + 
   labs(x = "Observation number", y = "Cook's distance") +
-  geom_text_repel(data = df, aes(label = ifelse(top_10_influence, 1:n, "")), size=3)
+  geom_text_repel(data = df, aes(label = ifelse(top_influence, 1:n, "")), size=3)
+print(8/(n - 2 * p))
 
 plot_5 <- grid.arrange(diag_qqplot, diag_res, diag_influence, diag_leverage, ncol = 2)
 
-df[top_10_leverage,]
-df[top_10_influence,]
+rbind(df[top_leverage,], df[top_influence,])
+
+glm_rob <- glm(docvis ~ female * c_age + c_hhninc + c_educyrs + hhkids + addins, family = poisson, data = df[!top_influence,] %>% select(-c("age", "hhninc", "educyrs")))
+
+estimate_robustness <- round(summary(glm_rob)$coefficient, 3)
+estimate_dispersion <- round(summary(glm_dispersion)$coefficient, 3)
+cbind(estimate_final_model[,1:2], estimate_dispersion[,1:2])
+
+# Interpretation
+estimate_final_model
+
+coefs <- coef(summary(glm_baseline))
+vcov_matrix <- vcov(glm_baseline)
+
+beta_c_age <- coefs["c_age", "Estimate"]
+beta_female <- coefs["femaleFemale", "Estimate"]
+beta_female_c_age <- coefs["femaleFemale:c_age", "Estimate"]
+var_c_age <- vcov_matrix["c_age", "c_age"]
+var_female_c_age <- vcov_matrix["femaleFemale:c_age", "femaleFemale:c_age"]
+cov_c_age_female_c_age <- vcov_matrix["c_age", "femaleFemale:c_age"]
+
+se_female <- sqrt(vcov_matrix["femaleFemale", "femaleFemale"])
+se_female_age <- sqrt(vcov_matrix["femaleFemale:c_age", "femaleFemale:c_age"])
+cov_female_age <- vcov_matrix["femaleFemale", "femaleFemale:c_age"]
+
+z_value <- qnorm(0.975)
+
+# Function to calculate the effect and confidence interval
+calc_effect <- function(c_age) {
+  effect <- beta_female + beta_female_c_age * c_age
+  se <- sqrt(se_female^2 + (se_female_age^2 * c_age^2) + 
+               (2 * cov_female_age * c_age))
+  ci_lower <- exp(effect - z_value * se)
+  ci_upper <- exp(effect + z_value * se)
+  estimate <- exp(effect)
+  data.frame(c_age = c_age, estimate = estimate, ci_lower = ci_lower, ci_upper = ci_upper)
+}
+
+c_age_values <- seq(min(df$c_age), max(df$c_age), by = 0.1)  # Adjust range and step as needed
+effect_data <- do.call(rbind, lapply(c_age_values, calc_effect))
+effect_data$age <- effect_data$c_age + mean(df$age)
+
+plot_6 <- ggplot(effect_data, aes(x = age)) +
+  geom_line(aes(y = estimate), color = "blue", size = 1) +
+  geom_ribbon(aes(ymin = ci_lower, ymax = ci_upper), fill = "blue", alpha = 0.2) +
+  labs(
+    x = "Age (years)",
+    y = "Effect of female on # doctor visits"
+  ) 
+
+beta_female <- beta_c_age + beta_female_c_age
+var_female <- var_c_age + var_female_c_age + 2 * cov_c_age_female_c_age
+
+CI_female_lower <- beta_female - z_value * sqrt(var_female)
+CI_female_upper <- beta_female + z_value * sqrt(var_female)
+exp(c(CI_female_lower, CI_female_upper))
+
+# Dispersion
+glm_dispersion <- glm(docvis ~ female * c_age + c_hhninc + c_educyrs + hhkids + addins, family = quasipoisson, data = df %>% select(-c("age", "hhninc", "educyrs")))
+estimate_dispersion <- round(summary(glm_dispersion)$coefficient, 3)
+cbind(estimate_final_model, estimate_dispersion[,2:4])
+rsq(glm_baseline, type = "kl")
+rsq(glm_dispersion, type = "kl")
+
+n <- length(glm_dispersion$fitted.values)
+p <- length(coef(glm_dispersion))
+top_influence <- rank(-cooks.distance(glm_dispersion)) <= 5
+
+ggplot(glm_dispersion, aes(x = 1:n, y = cooks.distance(glm_dispersion))) +
+  geom_point() +
+  geom_hline(yintercept = 8/(n - 2 * p), linetype = 2, col = "red", size = 0.75) + 
+  labs(x = "Observation number", y = "Cook's distance") +
+  geom_text_repel(data = df, aes(label = ifelse(top_influence, 1:n, "")), size=3)
+print(8/(n - 2 * p))
+
+ggsave(filename = "Figure 1.png", plot = plot_1, width = 6, height = 3, dpi = 300)
+ggsave(filename = "Figure 2.png", plot = plot_2, width = 8, height = 5, dpi = 300)
+ggsave(filename = "Figure 3.png", plot = plot_3, width = 6, height = 6, dpi = 300)
+ggsave(filename = "Figure 4.png", plot = plot_4, width = 7, height = 7, dpi = 300)
+ggsave(filename = "Figure 5.png", plot = plot_5, width = 6, height = 6, dpi = 300)
+ggsave(filename = "Figure 6.png", plot = plot_6, width = 6, height = 3, dpi = 300)
+
 
 
