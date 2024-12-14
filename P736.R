@@ -4,7 +4,6 @@ setwd = "D:/Files/Projects/Code/practical"
 # Load libraries and clean data
 library(ggplot2)
 library(gridExtra)
-library(knitr)
 library(dplyr)
 library(ggrepel)
 library(rsq)
@@ -211,10 +210,10 @@ diag_res <- ggplot(glm_baseline,
   geom_point(alpha = 0.4, position = position_jitter(width = 0.05, height = 0.05)) +
   labs(x = "Linear Predictor", y = "Deviance Residuals")
 
-diag_influence <- ggplot(glm_baseline, aes(x = 1:n, y = influence(glm_baseline)$hat / (p/n))) +
+diag_influence <- ggplot(glm_baseline, aes(x = 1:n, y = influence(glm_baseline)$hat)) +
   geom_point(size = 1) +
-  geom_hline(yintercept = 2, linetype = 2, , col = "red", size = 0.75) + 
-  labs(x = "Observation number", y = "Leverage / (p/n)") +
+  geom_hline(yintercept = (2 * p/n), linetype = 2, , col = "red", size = 0.75) + 
+  labs(x = "Observation number", y = "Leverage") +
   geom_text_repel(data = df, aes(label = ifelse(top_leverage, 1:n, "")), size=3)
 
 diag_leverage <- ggplot(glm_baseline, aes(x = 1:n, y = cooks.distance(glm_baseline))) +
